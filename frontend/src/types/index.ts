@@ -1,5 +1,6 @@
 // types.ts
 import { Sound } from "@pixi/sound";
+import { Sprite, Texture } from "pixi.js";
 
 export interface KeysState {
   a: boolean;
@@ -24,13 +25,22 @@ export interface PlayerConfig {
 
 export interface InventoryItem {
   name: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  texture: any;
+  texture: Texture;
   equipped: boolean;
 }
 
-// Обновляем интерфейс для звуков Pixi.js
 export interface GameSounds {
+  hover: Sound;
   jump: Sound;
   shoot: Sound;
+}
+
+export interface InventoryCell {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  graphics: any;
+  x: number;
+  y: number;
+  item: InventoryItem | null;
+  sprite: Sprite | null;
+  hover: boolean;
 }

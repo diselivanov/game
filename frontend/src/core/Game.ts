@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // Game.ts
-import { Application, Assets, Container, Sprite } from "pixi.js";
+import { Application, Assets, Container, Sprite, Texture } from "pixi.js";
 import { Sound } from "@pixi/sound";
 import { PhysicsEngine } from "./PhysicsEngine";
 import { InputManager } from "./InputManager";
@@ -43,41 +44,40 @@ export class Game {
     document.getElementById("pixi-container")!.appendChild(this.app.canvas);
     this.app.stage.addChild(this.gameWorld);
 
-    // Загружаем текстуры с обработкой ошибок
     try {
       const playerTexture = await Assets.load("/assets/player.png");
       const platformTexture = await Assets.load("/assets/platform.png");
       const backgroundTexture = await Assets.load("/assets/background.png");
       const bulletTexture = await Assets.load("/assets/bullet.png");
 
-      // Загружаем текстуру винтовки или создаем заглушку если файла нет
       let sniperRifleTexture;
       try {
         sniperRifleTexture = await Assets.load("/assets/sniper_rifle.png");
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
       } catch (error) {
         console.warn("Текстура sniper_rifle.png не найдена");
+        sniperRifleTexture = Texture.EMPTY;
       }
 
-      // Загружаем звуки через Assets
       try {
         const jumpSound = await Assets.load("/assets/sounds/jump.wav");
         const shootSound = await Assets.load("/assets/sounds/shoot.wav");
+        const hoverSound = await Assets.load("/assets/sounds/hover.wav");
 
         this.sounds = {
           jump: jumpSound,
           shoot: shootSound,
+          hover: hoverSound,
         };
 
-        // Настраиваем громкость
-        this.sounds.jump.volume = 0.3;
+        this.sounds.jump.volume = 0.5;
         this.sounds.shoot.volume = 0.5;
+        this.sounds.hover.volume = 0.2;
       } catch (error) {
         console.warn("Не удалось загрузить звуковые файлы:", error);
-        // Создаем заглушки для звуков
         this.sounds = {
           jump: Sound.from({}),
           shoot: Sound.from({}),
+          hover: Sound.from({}),
         };
       }
 
@@ -96,7 +96,7 @@ export class Game {
         bulletTexture,
         this.gameWorld,
         this.physics,
-        this.sounds, // Передаем звуки игроку
+        this.sounds,
       );
 
       const platformWidth = this.app.screen.width * 0.8;
@@ -164,13 +164,11 @@ export class Game {
   private handleInput(): void {
     if (!this.player) return;
 
-    // Обработка Q для инвентаря
     if (this.input.keys.q) {
       this.player.toggleInventory();
       this.input.keys.q = false;
     }
 
-    // Обработка прицеливания
     if (this.input.keys.w && this.player.currentWeapon) {
       this.player.aimUp();
     }
@@ -201,13 +199,11 @@ export class Game {
       }
     }
 
-    // Для выстрела - только пробел
     if (this.input.keys.space && this.player.currentWeapon) {
       this.player.shoot();
       this.input.keys.space = false;
     }
 
-    // Для инвентаря - только ЛКМ
     if (this.input.keys.leftMouse) {
       this.player.handleLeftClick();
       this.input.keys.leftMouse = false;

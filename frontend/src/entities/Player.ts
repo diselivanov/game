@@ -2,13 +2,18 @@
 // Player.ts
 import { Sprite, Texture, Graphics, Text, Container } from "pixi.js";
 import Matter from "matter-js";
-import { PlayerConfig, InventoryItem, GameSounds } from "../types";
+import {
+  PlayerConfig,
+  InventoryItem,
+  GameSounds,
+  InventoryCell,
+} from "../types";
 import { PhysicsEngine } from "../core/PhysicsEngine";
 
 export class Bullet {
   public sprite: Sprite;
   public velocity: { x: number; y: number };
-  public lifetime: number = 2000; // 2 секунды
+  public lifetime: number = 2000;
   public createdAt: number;
   public angle: number;
 
@@ -36,21 +41,17 @@ export class Bullet {
   }
 
   update(): boolean {
-    // Проверяем время жизни пули
     if (Date.now() - this.createdAt > this.lifetime) {
-      return true; // Пуля должна быть удалена
+      return true;
     }
 
-    // Двигаем пулю по прямой
     this.sprite.x += this.velocity.x;
     this.sprite.y += this.velocity.y;
 
     return false;
   }
 
-  destroy(_physics: PhysicsEngine): void {
-    // Больше не нужно удалять физическое тело
-  }
+  destroy(_physics: PhysicsEngine): void {}
 }
 
 export class Player {
@@ -72,10 +73,16 @@ export class Player {
   public aimAngle: number = 0;
   public bullets: Bullet[] = [];
   public physics: PhysicsEngine;
+  public inventoryCells: InventoryCell[] = [];
+  public itemNameText: Text;
+  public equippedIndicator: Graphics | null = null;
 
   private config: PlayerConfig;
   private bulletTexture: Texture;
   private sounds: GameSounds;
+  private cellSize: number = 80;
+  private cellsPerRow: number = 12;
+  private cellsPerColumn: number = 6;
 
   constructor(
     x: number,
@@ -86,7 +93,7 @@ export class Player {
     bulletTexture: Texture,
     gameWorld: Container,
     physics: PhysicsEngine,
-    sounds: GameSounds, // Добавляем звуки
+    sounds: GameSounds,
   ) {
     this.config = config;
     this.gameWorld = gameWorld;
@@ -107,20 +114,23 @@ export class Player {
       { inertia: Infinity },
     );
 
-    // Создаем спрайт для оружия
     this.weaponSprite = new Sprite();
     this.weaponSprite.anchor.set(0.5, 0.5);
     this.weaponSprite.visible = false;
-
-    // Добавляем оружие как дочерний элемент к спрайту игрока
     this.sprite.addChild(this.weaponSprite);
 
-    // Создаем UI инвентаря
     this.inventoryUI = new Container();
     this.inventoryUI.visible = false;
     this.gameWorld.addChild(this.inventoryUI);
 
-    // Добавляем снайперскую винтовку в инвентарь
+    this.itemNameText = new Text("", {
+      fontSize: 14,
+      fill: 0xffffff,
+      fontWeight: "bold",
+    });
+    this.itemNameText.visible = false;
+    this.inventoryUI.addChild(this.itemNameText);
+
     this.inventory.push({
       name: "Снайперская винтовка",
       texture: sniperRifleTexture,
@@ -132,51 +142,159 @@ export class Player {
 
   private createInventoryUI(): void {
     const background = new Graphics();
-    background.beginFill(0x000000, 0.8);
-    background.drawRect(0, 0, 300, 100);
+    background.beginFill(0x000000, 0);
+    background.drawRect(
+      0,
+      0,
+      this.cellSize * this.cellsPerRow,
+      this.cellSize * this.cellsPerColumn + 60,
+    );
     background.endFill();
     this.inventoryUI.addChild(background);
 
-    const title = new Text("ИНВЕНТАРЬ", {
-      fontSize: 16,
-      fill: 0xffffff,
-      fontWeight: "bold",
-    });
-    title.position.set(10, 10);
-    this.inventoryUI.addChild(title);
-
-    const instruction = new Text("ЛКМ - взять, ПКМ - снять, Q - закрыть", {
-      fontSize: 12,
-      fill: 0xcccccc,
-    });
-    instruction.position.set(10, 80);
-    this.inventoryUI.addChild(instruction);
+    this.createInventoryGrid();
   }
 
-  private updateInventoryUI(): void {
-    // Очищаем старые элементы (кроме фона, заголовка и инструкции)
-    while (this.inventoryUI.children.length > 3) {
-      this.inventoryUI.removeChildAt(3);
+  private createInventoryGrid(): void {
+    const startX = 0;
+    const startY = 50;
+
+    for (let row = 0; row < this.cellsPerColumn; row++) {
+      for (let col = 0; col < this.cellsPerRow; col++) {
+        const cellX = startX + col * this.cellSize;
+        const cellY = startY + row * this.cellSize;
+
+        const cellGraphics = new Graphics();
+        cellGraphics.beginFill(0x000000, 0.6);
+        cellGraphics.lineStyle(1, 0xffffff, 0.2); // Белый прозрачный контур
+        cellGraphics.drawRect(0, 0, this.cellSize, this.cellSize); // Убрали скругление
+        cellGraphics.endFill();
+        cellGraphics.position.set(cellX, cellY);
+        cellGraphics.interactive = true;
+        cellGraphics.cursor = "pointer";
+
+        const cellIndex = row * this.cellsPerRow + col;
+
+        cellGraphics.on("pointerover", () =>
+          this.onCellHover(cellGraphics, cellIndex),
+        );
+        cellGraphics.on("pointerout", () =>
+          this.onCellOut(cellGraphics, cellIndex),
+        );
+        cellGraphics.on("pointerdown", () => this.onCellClick(cellIndex));
+
+        this.inventoryUI.addChild(cellGraphics);
+
+        this.inventoryCells.push({
+          x: col,
+          y: row,
+          item: null,
+          sprite: null,
+          hover: false,
+          graphics: cellGraphics,
+        });
+      }
     }
 
-    let yPos = 35;
-    this.inventory.forEach((item, index) => {
-      const itemText = new Text(
-        `${index + 1}. ${item.name} ${item.equipped ? "✓" : ""}`,
-        {
-          fontSize: 14,
-          fill: item.equipped ? 0x00ff00 : 0xffffff,
-        },
+    this.updateInventoryDisplay();
+  }
+
+  private onCellHover(cell: Graphics, cellIndex: number): void {
+    const cellData = this.inventoryCells[cellIndex];
+
+    try {
+      this.sounds.hover.play();
+    } catch (error) {
+      console.warn("Ошибка воспроизведения звука наведения:", error);
+    }
+
+    if (cellData.item) {
+      cell.clear();
+      cell.beginFill(0x222222, 0.6);
+      cell.lineStyle(1, 0xffffff, 0.2);
+      cell.drawRect(0, 0, this.cellSize, this.cellSize);
+      cell.endFill();
+
+      this.itemNameText.text = cellData.item.name; // Показываем название оружия
+      this.itemNameText.style.fontSize = 20;
+      this.itemNameText.position.set(
+        (this.inventoryUI.width - this.itemNameText.width) / 2,
+        15, // Позиция
       );
-      itemText.position.set(20, yPos);
-      this.inventoryUI.addChild(itemText);
-      yPos += 20;
+      this.itemNameText.visible = true;
+
+      cellData.hover = true;
+    }
+  }
+
+  private onCellOut(cell: Graphics, cellIndex: number): void {
+    const cellData = this.inventoryCells[cellIndex];
+
+    if (cellData.item) {
+      cell.clear();
+      cell.beginFill(0x000000, 0.6);
+      cell.lineStyle(1, 0xffffff, 0.2);
+      cell.drawRect(0, 0, this.cellSize, this.cellSize);
+      cell.endFill();
+    }
+
+    this.itemNameText.visible = false;
+    cellData.hover = false;
+  }
+
+  private onCellClick(cellIndex: number): void {
+    const cellData = this.inventoryCells[cellIndex];
+
+    if (cellData.item) {
+      this.equipWeapon(cellData.item);
+      this.isInventoryOpen = false;
+      this.inventoryUI.visible = false;
+    }
+  }
+
+  private updateInventoryDisplay(): void {
+    // Очищаем все спрайты предметов
+    this.inventoryCells.forEach((cell) => {
+      if (cell.sprite && this.inventoryUI.children.includes(cell.sprite)) {
+        this.inventoryUI.removeChild(cell.sprite);
+      }
+      cell.sprite = null;
+      cell.item = null;
+    });
+
+    // Удаляем старые индикаторы экипировки
+    if (
+      this.equippedIndicator &&
+      this.inventoryUI.children.includes(this.equippedIndicator)
+    ) {
+      this.inventoryUI.removeChild(this.equippedIndicator);
+    }
+
+    // Заполняем ячейки предметами
+    this.inventory.forEach((item, index) => {
+      if (index < this.inventoryCells.length) {
+        const cell = this.inventoryCells[index];
+        cell.item = item;
+
+        // Добавляем спрайт предмета
+        const itemSprite = new Sprite(item.texture);
+        itemSprite.anchor.set(0.5);
+        itemSprite.width = this.cellSize * 0.7;
+        itemSprite.height = this.cellSize * 0.7;
+        itemSprite.position.set(
+          cell.graphics.position.x + this.cellSize / 2,
+          cell.graphics.position.y + this.cellSize / 2,
+        );
+
+        this.inventoryUI.addChild(itemSprite);
+        cell.sprite = itemSprite;
+      }
     });
 
     // Центрируем инвентарь
     this.inventoryUI.position.set(
       (this.gameWorld.width - this.inventoryUI.width) / 2,
-      50,
+      (this.gameWorld.height - this.inventoryUI.height) / 2,
     );
   }
 
@@ -205,7 +323,6 @@ export class Player {
       }
     }
 
-    // Обновление позиции оружия
     this.updateWeaponPosition();
   }
 
@@ -227,36 +344,44 @@ export class Player {
     this.inventoryUI.visible = this.isInventoryOpen;
 
     if (this.isInventoryOpen) {
-      this.updateInventoryUI();
+      this.updateInventoryDisplay();
+      this.inventoryUI.position.set(
+        (this.gameWorld.width - this.inventoryUI.width) / 2,
+        (this.gameWorld.height - this.inventoryUI.height) / 2,
+      );
+      // Устанавливаем максимальный zIndex
+      this.gameWorld.setChildIndex(
+        this.inventoryUI,
+        this.gameWorld.children.length - 1,
+      );
+    } else {
+      this.itemNameText.visible = false;
     }
   }
 
   handleLeftClick(): void {
     if (this.isInventoryOpen) {
-      // Выбор снайперской винтовки из инвентаря
-      const sniperRifle = this.inventory.find(
-        (item) => item.name === "Снайперская винтовка",
-      );
-      if (sniperRifle) {
-        this.equipWeapon(sniperRifle);
-        this.isInventoryOpen = false;
-        this.inventoryUI.visible = false;
-      }
+      // Обработка клика теперь в onCellClick
+      return;
+    }
+
+    const sniperRifle = this.inventory.find(
+      (item) => item.name === "Снайперская винтовка",
+    );
+    if (sniperRifle) {
+      this.equipWeapon(sniperRifle);
     }
   }
 
   handleRightClick(): void {
     if (this.currentWeapon) {
       this.unequipWeapon();
-      console.log("Винтовка снята");
     }
   }
 
   equipWeapon(weapon: InventoryItem): void {
-    // Снимаем текущее оружие
     this.unequipWeapon();
 
-    // Экипируем новое оружие
     this.currentWeapon = weapon;
     weapon.equipped = true;
 
@@ -264,13 +389,11 @@ export class Player {
       this.weaponSprite.texture = weapon.texture;
       this.weaponSprite.visible = true;
       this.weaponSprite.scale.set(1);
-
-      // Сбрасываем угол прицеливания
       this.aimAngle = 0;
-
-      // Принудительно обновляем позицию
       this.updateWeaponPosition();
     }
+
+    this.updateInventoryDisplay();
   }
 
   unequipWeapon(): void {
@@ -281,11 +404,12 @@ export class Player {
       this.weaponSprite.texture = Texture.EMPTY;
       this.aimAngle = 0;
     }
+
+    this.updateInventoryDisplay();
   }
 
   aimUp(): void {
     if (this.currentWeapon) {
-      // W поднимает прицел вверх
       this.aimAngle = Math.max(this.aimAngle - 0.05, -Math.PI / 4);
       this.updateWeaponPosition();
     }
@@ -293,7 +417,6 @@ export class Player {
 
   aimDown(): void {
     if (this.currentWeapon) {
-      // S опускает прицел вниз
       this.aimAngle = Math.min(this.aimAngle + 0.05, Math.PI / 4);
       this.updateWeaponPosition();
     }
@@ -302,12 +425,10 @@ export class Player {
   shoot(): void {
     if (!this.currentWeapon) return;
 
-    // Правильное вычисление угла стрельбы с учетом направления игрока
     const baseAngle = this.direction === 1 ? 0 : Math.PI;
     const finalAngle =
       baseAngle + (this.direction === 1 ? this.aimAngle : -this.aimAngle);
 
-    // Создаем пулю
     const bulletX = this.sprite.x + Math.cos(finalAngle) * 40;
     const bulletY = this.sprite.y + Math.sin(finalAngle) * 40;
     const bulletSpeed = 50;
@@ -324,20 +445,16 @@ export class Player {
     this.bullets.push(bullet);
     this.gameWorld.addChild(bullet.sprite);
 
-    // Воспроизводим звук выстрела через Pixi.js Sound
     try {
       this.sounds.shoot.play();
     } catch (error) {
       console.warn("Ошибка воспроизведения звука выстрела:", error);
     }
-
-    console.log("Выстрел из снайперской винтовки!");
   }
 
   updateWeaponPosition(): void {
     if (!this.currentWeapon || !this.weaponSprite.visible) return;
 
-    // Позиционирование оружия относительно игрока
     const offsetX = this.direction === 1 ? 30 : -30;
     const offsetY = 20;
 
@@ -390,8 +507,6 @@ export class Player {
     this.isOnGround = false;
     this.isJumping = true;
     this.jumpType = "forward";
-
-    // Воспроизводим звук прыжка
     this.playJumpSound();
   }
 
@@ -406,8 +521,6 @@ export class Player {
     this.isFlipping = true;
     this.flipRotation = 0;
     this.flipDirection = this.direction === 1 ? -1 : 1;
-
-    // Воспроизводим звук прыжка
     this.playJumpSound();
   }
 
