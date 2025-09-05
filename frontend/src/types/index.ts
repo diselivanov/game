@@ -1,18 +1,36 @@
-// Определяет TypeScript-интерфейсы
+// types.ts
+import { Sound } from "@pixi/sound";
 
 export interface KeysState {
-  // Состояние клавиш управления
-  a: boolean; // Движение влево
-  d: boolean; // Движение вправо
-  enter: boolean; // Прыжок вперед
-  backspace: boolean; // Прыжок назад
+  a: boolean;
+  d: boolean;
+  enter: boolean;
+  backspace: boolean;
+  space: boolean;
+  q: boolean;
+  w: boolean;
+  s: boolean;
+  leftMouse: boolean;
+  rightMouse: boolean;
 }
 
 export interface PlayerConfig {
-  // Конфигурация игрока
-  speed: number; // Базовая скорость движения
-  jumpForwardUpForce: number; // Вертикальная сила прыжка вперед
-  jumpBackwardUpForce: number; // Вертикальная сила прыжка назад
-  jumpForwardForce: number; // Горизонтальная сила прыжка вперед
-  jumpBackwardForce: number; // Горизонтальная сила прыжка назад
+  speed: number;
+  jumpForwardUpForce: number;
+  jumpBackwardUpForce: number;
+  jumpForwardForce: number;
+  jumpBackwardForce: number;
+}
+
+export interface InventoryItem {
+  name: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  texture: any;
+  equipped: boolean;
+}
+
+// Обновляем интерфейс для звуков Pixi.js
+export interface GameSounds {
+  jump: Sound;
+  shoot: Sound;
 }
